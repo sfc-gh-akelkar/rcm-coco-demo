@@ -1,0 +1,145 @@
+-- ============================================================================
+-- Cortex Code Demo — Dynamic Table Conversion
+-- Demo Part 4: Replace Task+Stream with declarative Dynamic Tables
+-- "Answer key" — show CoCo converting the imperative pipeline to DTs
+-- ============================================================================
+
+USE SCHEMA CORTEX_CODE_RCM_DEMO.MARTS;
+
+-- ---------------------------------------------------------------------------
+-- DT 1: Deduplicated & enriched claims (replaces the Stream → MERGE pattern)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE DYNAMIC TABLE DT_EM_CLAIMS_ENRICHED
+    TARGET_LAG = '1 hour'
+    WAREHOUSE = COMPUTE_WH
+AS
+WITH deduplicated AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY CLAIM_ID
+            ORDER BY LAST_UPDATED DESC
+        ) AS rn
+    FROM CORTEX_CODE_RCM_DEMO.RAW.CLAIMS
+    WHERE SERVICE_LINE_CODE = 'EM'
+      AND CLAIM_STATUS IN ('PAID', 'DENIED', 'PARTIAL', 'ADJUDICATED')
+)
+SELECT
+    c.CLAIM_ID,
+    c.ENCOUNTER_ID,
+    c.PATIENT_ACCOUNT_NUM,
+    c.FACILITY_ID,
+    f.FACILITY_NAME,
+    c.PROVIDER_NPI,
+    p.PROVIDER_NAME,
+    p.PROVIDER_SPECIALTY,
+    c.SERVICE_DATE,
+    c.CPT_CODE,
+    c.CPT_DESCRIPTION,
+    c.PRIMARY_DIAGNOSIS_CODE,
+    c.PAYER_ID,
+    py.PAYER_NAME,
+    py.PAYER_TYPE,
+    c.BILLED_AMOUNT,
+    COALESCE(c.ALLOWED_AMOUNT, 0) AS ALLOWED_AMOUNT,
+    COALESCE(c.PAID_AMOUNT, 0) AS PAID_AMOUNT,
+    COALESCE(c.PATIENT_RESPONSIBILITY, 0) AS PATIENT_RESPONSIBILITY,
+    COALESCE(c.ADJUSTMENT_AMOUNT, 0) AS ADJUSTMENT_AMOUNT,
+    c.CLAIM_STATUS,
+    c.DENIAL_REASON_CODE,
+    c.DENIAL_REASON_DESC,
+    DATEDIFF('DAY', c.SERVICE_DATE, c.FIRST_PAYMENT_DATE) AS DAYS_TO_PAYMENT,
+    IFF(c.CLAIM_STATUS = 'DENIED', 1, 0) AS IS_DENIED,
+    CASE
+        WHEN c.CPT_CODE BETWEEN '99281' AND '99285'
+        THEN RIGHT(c.CPT_CODE, 1)::INT
+    END AS EM_LEVEL,
+    ROW_NUMBER() OVER (
+        PARTITION BY c.ENCOUNTER_ID
+        ORDER BY c.BILLED_AMOUNT DESC
+    ) AS CLAIM_RANK
+FROM deduplicated c
+JOIN CORTEX_CODE_RCM_DEMO.RAW.FACILITIES f ON c.FACILITY_ID = f.FACILITY_ID
+JOIN CORTEX_CODE_RCM_DEMO.RAW.PROVIDERS p ON c.PROVIDER_NPI = p.PROVIDER_NPI
+JOIN CORTEX_CODE_RCM_DEMO.RAW.PAYERS py ON c.PAYER_ID = py.PAYER_ID
+WHERE c.rn = 1;
+
+
+-- ---------------------------------------------------------------------------
+-- DT 2: Collections per visit mart (replaces the full-refresh CTAS task)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE DYNAMIC TABLE DT_EM_COLLECTIONS_PER_VISIT
+    TARGET_LAG = '1 hour'
+    WAREHOUSE = COMPUTE_WH
+AS
+SELECT
+    FACILITY_ID,
+    FACILITY_NAME,
+    PROVIDER_NPI,
+    PROVIDER_NAME,
+    DATE_TRUNC('MONTH', SERVICE_DATE) AS REPORT_MONTH,
+    COUNT(DISTINCT ENCOUNTER_ID) AS TOTAL_VISITS,
+    COUNT(DISTINCT CLAIM_ID) AS TOTAL_CLAIMS,
+    SUM(BILLED_AMOUNT) AS TOTAL_BILLED,
+    SUM(PAID_AMOUNT) AS TOTAL_COLLECTED,
+    SUM(ADJUSTMENT_AMOUNT) AS TOTAL_ADJUSTMENTS,
+    SUM(PATIENT_RESPONSIBILITY) AS TOTAL_PATIENT_RESP,
+    ROUND(
+        IFF(COUNT(DISTINCT ENCOUNTER_ID) > 0,
+            SUM(PAID_AMOUNT) / COUNT(DISTINCT ENCOUNTER_ID), 0),
+        2
+    ) AS COLLECTIONS_PER_VISIT,
+    ROUND(
+        IFF(SUM(BILLED_AMOUNT) > 0,
+            SUM(PAID_AMOUNT) / SUM(BILLED_AMOUNT) * 100, 0),
+        2
+    ) AS COLLECTION_RATE,
+    SUM(IS_DENIED) AS DENIAL_COUNT,
+    ROUND(
+        IFF(COUNT(*) > 0,
+            SUM(IS_DENIED) / COUNT(*) * 100, 0),
+        2
+    ) AS DENIAL_RATE,
+    ROUND(AVG(DAYS_TO_PAYMENT), 1) AS AVG_DAYS_TO_PAYMENT,
+    ROUND(AVG(EM_LEVEL), 2) AS AVG_EM_LEVEL,
+    LISTAGG(DISTINCT IFF(IS_DENIED = 1, DENIAL_REASON_CODE, NULL), ', ')
+        WITHIN GROUP (ORDER BY DENIAL_REASON_CODE) AS DENIAL_REASONS
+FROM CORTEX_CODE_RCM_DEMO.MARTS.DT_EM_CLAIMS_ENRICHED
+WHERE CLAIM_RANK = 1
+GROUP BY
+    FACILITY_ID,
+    FACILITY_NAME,
+    PROVIDER_NPI,
+    PROVIDER_NAME,
+    DATE_TRUNC('MONTH', SERVICE_DATE);
+
+
+-- ---------------------------------------------------------------------------
+-- DT 3: Denial analysis by payer (bonus — shows DT chaining)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE DYNAMIC TABLE DT_EM_DENIAL_ANALYSIS
+    TARGET_LAG = '2 hours'
+    WAREHOUSE = COMPUTE_WH
+AS
+SELECT
+    e.PAYER_ID,
+    e.PAYER_NAME,
+    e.PAYER_TYPE,
+    e.FACILITY_ID,
+    e.FACILITY_NAME,
+    DATE_TRUNC('MONTH', e.SERVICE_DATE) AS REPORT_MONTH,
+    COUNT(*) AS TOTAL_CLAIMS,
+    SUM(e.IS_DENIED) AS DENIED_CLAIMS,
+    ROUND(IFF(COUNT(*) > 0, SUM(e.IS_DENIED) / COUNT(*) * 100, 0), 2) AS DENIAL_RATE_PCT,
+    SUM(IFF(e.IS_DENIED = 1, e.BILLED_AMOUNT, 0)) AS DENIED_BILLED_AMOUNT,
+    LISTAGG(DISTINCT IFF(e.IS_DENIED = 1, e.DENIAL_REASON_CODE, NULL), ', ')
+        WITHIN GROUP (ORDER BY e.DENIAL_REASON_CODE) AS TOP_DENIAL_CODES,
+    SUM(e.BILLED_AMOUNT) AS TOTAL_BILLED,
+    SUM(e.PAID_AMOUNT) AS TOTAL_PAID,
+    ROUND(AVG(e.DAYS_TO_PAYMENT), 1) AS AVG_DAYS_TO_PAY
+FROM CORTEX_CODE_RCM_DEMO.MARTS.DT_EM_CLAIMS_ENRICHED e
+WHERE e.CLAIM_RANK = 1
+GROUP BY
+    e.PAYER_ID, e.PAYER_NAME, e.PAYER_TYPE,
+    e.FACILITY_ID, e.FACILITY_NAME,
+    DATE_TRUNC('MONTH', e.SERVICE_DATE);

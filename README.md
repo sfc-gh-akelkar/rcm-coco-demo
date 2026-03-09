@@ -1,90 +1,48 @@
-# Snowflake ML End-to-End Demo | Quadax HOL
-
-**Duration:** 90 minutes  
-**Audience:** Data Scientists evaluating Snowflake ML  
-**Prerequisites:** Basic Python/SQL knowledge
-
----
+# Cortex Code Demo — Healthcare RCM (Revenue Cycle Management)
 
 ## Overview
+Live walkthrough of Cortex Code for a healthcare data engineering team. Demonstrates how AI-assisted development accelerates a SQL Server → Snowflake EDW migration across Emergency Medicine, Radiology, and Anesthesiology service lines.
 
-This hands-on lab demonstrates Snowflake's complete ML platform through two notebooks:
+## Scenario
+A healthcare RCM company is migrating their legacy SQL Server EDW to Snowflake. Their workloads include DML-heavy transformations, COPY ingestion, stored procs, Streams, and Dynamic Tables. This demo shows how Cortex Code accelerates every phase of that migration.
 
-| Notebook | Duration | Focus |
-|----------|----------|-------|
-| **STEP_1_BASIC_DATA_EXPLORATION** | 20 min | Snowpark DataFrames, transformations, data analysis |
-| **E2E_ML_NOTEBOOK** | 70 min | Feature Store, Model Registry, HPO, Monitoring, Deployment |
+## Demo Structure (~40 min)
 
----
+| Part | Topic | Time | Key Asset |
+|------|-------|------|-----------|
+| 1 | The Hook — T-SQL → Snowflake conversion | 5 min | `tsql-samples/em_collections_sproc.sql` |
+| 2 | Schema Exploration & Data Discovery | 5 min | `sql/01_schema_ddl.sql` + `sql/02_sample_data.sql` |
+| 3 | Pipeline Development — DML transformations | 10 min | `sql/03_staging_to_mart.sql` |
+| 4 | Dynamic Tables — Declarative pipelines | 5 min | `sql/04_dynamic_tables.sql` |
+| 5 | AI/ML Tease — Denial prediction UDF | 5 min | `snowpark/denial_prediction_udf.py` |
+| 6 | Developer Productivity Features | 5 min | Live demo of shortcuts |
+| 7 | The Close — Migration timeline impact | 5 min | `scripts/DEMO_SCRIPT.md` |
 
-## What You'll Learn
+## Pre-Demo Setup
+```bash
+# 1. Create the demo schema
+snowsql -f sql/01_schema_ddl.sql
 
-### Step 1: Data Exploration
-- Snowpark DataFrames vs Pandas (memory comparison)
-- Transformations: select, filter, group_by, sort
-- Data analysis: describe, aggregations, schema inspection
-- Persisting results with `save_as_table`
+# 2. Load sample data
+snowsql -f sql/02_sample_data.sql
 
-### Step 2: End-to-End ML Workflow
-- **Feature Engineering** with Snowpark APIs
-- **Feature Store** - Entity registration, Feature Views, dataset generation
-- **Model Training** - XGBoost baseline + distributed HPO
-- **Model Registry** - Versioning, tagging (DEV/PROD), metadata
-- **Inference** - Batch predictions with `model.run()`
-- **Explainability** - SHAP values with built-in visualization
-- **Monitoring** - Model monitors for drift detection
-- **Deployment** - Stored procedures + SPCS containers
-
----
-
-## Quick Start
-
-### 1. Import Notebooks to Snowflake
-
-1. In Snowsight: **Projects** → **Notebooks** → **Import .ipynb**
-2. Upload both notebooks
-3. Select a Medium (or larger) warehouse
-
-### 2. Run Step 1 First
-
-Start with `STEP_1_BASIC_DATA_EXPLORATION.ipynb` to understand Snowpark basics.
-
-### 3. Run E2E ML Notebook
-
-Continue with `E2E_ML_NOTEBOOK.ipynb` for the complete ML workflow.
-
----
-
-## Key Concepts
-
-| Concept | What It Does |
-|---------|--------------|
-| **Feature Store** | Centralized feature management with versioning and lineage |
-| **Model Registry** | Version control, tagging, and lifecycle management for models |
-| **Distributed HPO** | Hyperparameter tuning across warehouse compute nodes |
-| **Model Monitors** | Track prediction drift and performance over time |
-| **SPCS Deployment** | Real-time inference endpoints via containers |
-
----
+# 3. Launch Cortex Code
+cd cortex-code-rcm-demo
+cortex
+```
 
 ## Files
-
 ```
-quadax-ml-e2e-demo/
-├── STEP_1_BASIC_DATA_EXPLORATION.ipynb  # Data exploration basics
-├── E2E_ML_NOTEBOOK.ipynb                # Full ML workflow
-└── README.md                            # This file
+├── README.md                           # This file
+├── tsql-samples/
+│   └── em_collections_sproc.sql        # T-SQL stored proc for Part 1 conversion demo
+├── sql/
+│   ├── 01_schema_ddl.sql               # Demo schema: claims, providers, payers, encounters
+│   ├── 02_sample_data.sql              # Realistic sample data
+│   ├── 03_staging_to_mart.sql          # Staging → mart transformation (answer key)
+│   └── 04_dynamic_tables.sql           # DT conversion example (answer key)
+├── snowpark/
+│   └── denial_prediction_udf.py        # Snowpark denial prediction scaffold (answer key)
+└── scripts/
+    └── DEMO_SCRIPT.md                  # Full talk track with prompts
 ```
-
----
-
-## Resources
-
-- [Snowflake ML Documentation](https://docs.snowflake.com/en/developer-guide/snowpark-ml/index)
-- [Feature Store Guide](https://docs.snowflake.com/en/developer-guide/snowpark-ml/feature-store/overview)
-- [Model Registry Guide](https://docs.snowflake.com/en/developer-guide/snowpark-ml/model-registry/overview)
-- [Model Monitoring Guide](https://docs.snowflake.com/en/developer-guide/snowpark-ml/model-management/model-monitoring/overview)
-
----
-
-**Ready to build ML workflows without infrastructure headaches?** Let's go!
