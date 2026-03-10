@@ -6,12 +6,34 @@
 
 ---
 
+## Platform Notes
+
+This demo works on both Cortex Code surfaces. Key differences:
+
+| Feature | CLI (`cortex`) | Snowsight |
+|---------|---------------|-----------|
+| File references | `@path/to/file.sql` | Paste file contents directly into chat |
+| Table references | `#DB.SCHEMA.TABLE` (auto-injects schema + sample rows) | Type the fully-qualified table name; CoCo resolves it |
+| Run SQL | `/sql SELECT ...` | CoCo generates SQL → click **Run** in the worksheet |
+| Bash commands | `!git status`, `!dbt run` | Not available |
+| Plan Mode | `Shift+Tab` before sending | Not available (CoCo always plans internally) |
+| Todo list | `Ctrl+D` to toggle | Not available |
+| Fork conversation | `/fork` | Not available |
+| Compact context | `/compact` | Not available |
+| Custom Skills | `$skill-name` | Not available |
+| Write/edit files | CoCo writes files directly to your project | CoCo generates code in chat; copy to worksheet or notebook |
+
+> **Recommendation:** Use **CLI** for the full demo experience (Parts 1–6). Use **Snowsight** when the audience prefers a browser-based experience or doesn't have CLI installed — skip Part 6 productivity features or adapt them.
+
+---
+
 ## Pre-Demo Checklist
 
 - [ ] Run `sql/01_schema_ddl.sql` to create schema
 - [ ] Run `sql/02_sample_data.sql` to load data
 - [ ] Verify data: `SELECT COUNT(*) FROM CORTEX_CODE_RCM_DEMO.RAW.CLAIMS;` (should be ~500)
-- [ ] Open Cortex Code in the project directory
+- [ ] **CLI path:** Open Cortex Code in the project directory (`cd rcm-coco-demo && cortex`)
+- [ ] **Snowsight path:** Open Snowsight → Cortex Code panel; have `tsql-samples/em_collections_sproc.sql` content copied to clipboard
 - [ ] Have `tsql-samples/em_collections_sproc.sql` ready to paste
 
 ---
@@ -24,14 +46,25 @@
 > "Your team is migrating hundreds of SQL Server stored procedures to Snowflake. Let's see how Cortex Code handles this."
 
 **Prompt to type:**
-```
-@tsql-samples/em_collections_sproc.sql
 
-Convert this T-SQL stored procedure to Snowflake SQL. Handle all dialect
-differences including: GETDATE → CURRENT_TIMESTAMP, ISNULL → COALESCE,
-temp tables → CTEs or transient tables, DATEDIFF syntax, STRING_AGG → LISTAGG,
-and CAST patterns. Keep the same business logic.
-```
+> **CLI:**
+> ```
+> @tsql-samples/em_collections_sproc.sql
+>
+> Convert this T-SQL stored procedure to Snowflake SQL. Handle all dialect
+> differences including: GETDATE → CURRENT_TIMESTAMP, ISNULL → COALESCE,
+> temp tables → CTEs or transient tables, DATEDIFF syntax, STRING_AGG → LISTAGG,
+> and CAST patterns. Keep the same business logic.
+> ```
+
+> **Snowsight:**
+> Paste the full T-SQL stored procedure from `em_collections_sproc.sql` into the chat, then type:
+> ```
+> Convert this T-SQL stored procedure to Snowflake SQL. Handle all dialect
+> differences including: GETDATE → CURRENT_TIMESTAMP, ISNULL → COALESCE,
+> temp tables → CTEs or transient tables, DATEDIFF syntax, STRING_AGG → LISTAGG,
+> and CAST patterns. Keep the same business logic.
+> ```
 
 **What to point out:**
 - CoCo identifies ~10 dialect differences automatically
@@ -39,6 +72,7 @@ and CAST patterns. Keep the same business logic.
 - Handles `WITH (NOLOCK)` removal (no lock contention in Snowflake)
 - Converts `DATEADD(MONTH, DATEDIFF(MONTH, 0, date), 0)` → `DATE_TRUNC('MONTH', date)`
 - Converts `STRING_AGG` → `LISTAGG`
+- **CLI bonus:** CoCo can write the converted SQL directly to a new file in your project
 
 **Transition:** "That took 30 seconds. In a manual migration, that's 30-60 minutes per proc. Now let's explore the data it works with."
 
@@ -47,19 +81,30 @@ and CAST patterns. Keep the same business logic.
 ## Part 2: Schema Exploration (5 min)
 
 **Prompt:**
-```
-#CORTEX_CODE_RCM_DEMO.RAW.CLAIMS
 
-What does this table contain? What's the distribution of claim statuses?
-Are there any data quality issues I should know about?
-```
+> **CLI:**
+> ```
+> #CORTEX_CODE_RCM_DEMO.RAW.CLAIMS
+>
+> What does this table contain? What's the distribution of claim statuses?
+> Are there any data quality issues I should know about?
+> ```
+
+> **Snowsight:**
+> ```
+> Look at the table CORTEX_CODE_RCM_DEMO.RAW.CLAIMS.
+>
+> What does this table contain? What's the distribution of claim statuses?
+> Are there any data quality issues I should know about?
+> ```
 
 **What to point out:**
-- `#` auto-injects schema + sample rows — no manual DESCRIBE needed
+- **CLI:** `#` auto-injects schema + sample rows — no manual DESCRIBE needed
+- **Snowsight:** CoCo resolves the table name and queries schema/samples behind the scenes
 - CoCo understands the domain (RCM, claims, CPT codes)
 - It proactively identifies NULL patterns and data quality issues
 
-**Follow-up prompt:**
+**Follow-up prompt (same on both):**
 ```
 Show me the relationship between CLAIMS, ENCOUNTERS, PROVIDERS, and PAYERS.
 Which columns are the join keys?
@@ -74,33 +119,38 @@ Which columns are the join keys?
 ### Step 3a: Build the transformation
 
 **Prompt:**
-```
-Using #CORTEX_CODE_RCM_DEMO.RAW.CLAIMS, #CORTEX_CODE_RCM_DEMO.RAW.FACILITIES,
-#CORTEX_CODE_RCM_DEMO.RAW.PROVIDERS, and #CORTEX_CODE_RCM_DEMO.RAW.PAYERS:
 
-Create a mart table CORTEX_CODE_RCM_DEMO.MARTS.MART_EM_COLLECTIONS_PER_VISIT that:
-1. Deduplicates claims by CLAIM_ID (keep latest by LAST_UPDATED)
-2. Filters to EM service line and paid/denied/partial/adjudicated statuses
-3. Joins with facilities, providers, and payers
-4. Ranks claims per encounter (keep highest billed)
-5. Aggregates by facility, provider, and month to calculate:
-   - Collections per visit
-   - Collection rate (paid/billed %)
-   - Denial rate
-   - Average days to payment
-   - Average EM level
-```
+> **CLI:**
+> ```
+> Using #CORTEX_CODE_RCM_DEMO.RAW.CLAIMS, #CORTEX_CODE_RCM_DEMO.RAW.FACILITIES,
+> #CORTEX_CODE_RCM_DEMO.RAW.PROVIDERS, and #CORTEX_CODE_RCM_DEMO.RAW.PAYERS:
+>
+> Create a mart table CORTEX_CODE_RCM_DEMO.MARTS.MART_EM_COLLECTIONS_PER_VISIT that:
+> 1. Deduplicates claims by CLAIM_ID (keep latest by LAST_UPDATED)
+> 2. Filters to EM service line and paid/denied/partial/adjudicated statuses
+> 3. Joins with facilities, providers, and payers
+> 4. Ranks claims per encounter (keep highest billed)
+> 5. Aggregates by facility, provider, and month to calculate:
+>    - Collections per visit
+>    - Collection rate (paid/billed %)
+>    - Denial rate
+>    - Average days to payment
+>    - Average EM level
+> ```
+
+> **Snowsight:** Same prompt, but replace `#DB.SCHEMA.TABLE` with plain `DB.SCHEMA.TABLE` references (no `#` prefix).
 
 **What to point out:**
 - CoCo uses Snowflake-native functions (IFF, COALESCE, DATE_TRUNC)
 - It generates the dedup + ranking pattern correctly
-- Notice the todo list (Ctrl+D) showing its plan
+- **CLI bonus:** Notice the todo list (`Ctrl+D`) showing its plan
+- **Snowsight:** CoCo generates the SQL in chat — click **Run** to execute in a worksheet
 
 **Compare with answer key:** `sql/03_staging_to_mart.sql`
 
 ### Step 3b: Add denial rate calculation
 
-**Prompt:**
+**Prompt (same on both):**
 ```
 Add a denial rate calculation that breaks down by denial reason code, and
 filter to only paid/adjudicated claims for the collections metrics
@@ -109,7 +159,7 @@ but keep denied claims for the denial rate calculation.
 
 ### Step 3c: Make it incremental
 
-**Prompt:**
+**Prompt (same on both):**
 ```
 Now make this incremental:
 1. Create a Stream on CORTEX_CODE_RCM_DEMO.STAGING.STG_CLAIMS_DAILY
@@ -130,7 +180,7 @@ Now make this incremental:
 
 ## Part 4: Dynamic Tables (5 min)
 
-**Prompt:**
+**Prompt (same on both):**
 ```
 Convert the Task + Stream pipeline from Part 3 into Dynamic Tables.
 I want the same business logic but using declarative DTs with a 1-hour target lag.
@@ -151,7 +201,7 @@ Create a chain: enriched claims DT → collections mart DT → denial analysis D
 
 ## Part 5: AI/ML Tease (5 min)
 
-**Prompt:**
+**Prompt (same on both):**
 ```
 Help me build a Snowpark Python UDF that predicts claim denial probability.
 It should take payer_id, payer_type, CPT code, diagnosis code, provider NPI,
@@ -165,6 +215,8 @@ CORTEX_CODE_RCM_DEMO.MARTS.
 - Uses Snowpark native patterns (session.sql, @udf decorator)
 - Generates a sample prediction query they can run immediately
 - This is a real use case: RCM companies save millions catching denials early
+- **CLI bonus:** CoCo writes the Python file directly to `snowpark/denial_prediction_udf.py`
+- **Snowsight:** Copy the generated code into a Snowflake notebook or local file
 
 **Compare with answer key:** `snowpark/denial_prediction_udf.py`
 
@@ -173,6 +225,8 @@ CORTEX_CODE_RCM_DEMO.MARTS.
 ---
 
 ## Part 6: Developer Productivity (5 min)
+
+### CLI Version
 
 Run through these quickly:
 
@@ -187,6 +241,16 @@ Run through these quickly:
 
 **Skills teaser:**
 > "You can also create custom Skills — imagine an 'RCM Coding Standards' skill that enforces your naming conventions, your CPT validation rules, and your EM-specific business logic every time someone writes SQL."
+
+### Snowsight Version
+
+> These CLI-specific features aren't available in Snowsight. Instead, highlight:
+
+| Demo | How | Talk track |
+|------|-----|------------|
+| Run generated SQL | Click **Run** on any SQL CoCo generates | "One click to execute — no copy-paste to a separate worksheet" |
+| Multi-turn iteration | Just keep chatting | "Refine your query iteratively — CoCo remembers the full conversation" |
+| Schema awareness | Ask about any table by name | "CoCo knows your schema — ask about any table and it pulls the structure automatically" |
 
 ---
 
