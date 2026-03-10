@@ -3,7 +3,7 @@
 -- Creates RCM-shaped tables for Emergency Medicine billing demo
 -- ============================================================================
 
-USE ROLE SYSADMIN;
+USE ROLE SF_INTELLIGENCE_DEMO;
 
 CREATE DATABASE IF NOT EXISTS CORTEX_CODE_RCM_DEMO;
 CREATE SCHEMA IF NOT EXISTS CORTEX_CODE_RCM_DEMO.RAW;
